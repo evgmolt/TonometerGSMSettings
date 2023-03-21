@@ -41,15 +41,12 @@ namespace BLE
         private List<DeviceInformation> UnknownDevices = new List<DeviceInformation>();
         private BluetoothLEDevice bluetoothLEDevice = null;
         private GSMSettings Settings;
-        private BluetoothLEAdvertisementWatcher adverWatcher;
         private GattCharacteristic selectedCharacteristic;
+        private CMD CurrentCommand;
 
         public MainPage()
         {
             this.InitializeComponent();
-            adverWatcher = new BluetoothLEAdvertisementWatcher();
-            adverWatcher.Received += OnAdvertisementReceived;
-            adverWatcher.Start();
 
             var coreTitleBar = CoreApplication.GetCurrentView().TitleBar;
             coreTitleBar.ExtendViewIntoTitleBar = false;
@@ -294,90 +291,28 @@ namespace BLE
                 }
             });
         }
-        private async void OnAdvertisementReceived(BluetoothLEAdvertisementWatcher sender, BluetoothLEAdvertisementReceivedEventArgs args)
+
+        private async void SendBuffer(CMD command, string content)
         {
-            if (bluetoothLEDevice is null) return;
-            if (args.BluetoothAddress == bluetoothLEDevice.BluetoothAddress)
+            List<byte[]> ByteBufferList;
+            IBuffer writeBuffer;
+            ByteBufferList = CreateByteBuffers(CurrentCommand, content);
+            for (int i = 0; i < ByteBufferList.Count; i++)
             {
-                GattDeviceServicesResult result = await bluetoothLEDevice.GetGattServicesAsync(BluetoothCacheMode.Uncached);
-
-                if (result.Status == GattCommunicationStatus.Success)
-                {
-                    Guid uuid = Guid.Parse("0000FFE0-0000-1000-8000-00805F9B34FB"); // Guid сервиса
-                    Guid uid = Guid.Parse("0000FFE1-0000-1000-8000-00805F9B34FB"); // Guid характеристики
-                    var services = result.Services;
-
-                    foreach (var service in services)
-                    {
-                        if (service.Uuid == uuid)
-                        {
-                            IReadOnlyList<GattCharacteristic> characteristics = null;
-                            try
-                            {
-                                // Ensure we have access to the device.
-                                var accessStatus = await service.RequestAccessAsync();
-                                if (accessStatus == DeviceAccessStatus.Allowed)
-                                {
-                                    // BT_Code: Get all the child characteristics of a service. Use the cache mode to specify uncached characterstics only 
-                                    // and the new Async functions to get the characteristics of unpaired devices as well. 
-                                    var result3 = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
-                                    if (result3.Status == GattCommunicationStatus.Success)
-                                    {
-                                        characteristics = result3.Characteristics;
-                                    }
-                                    else
-                                    {
-                                        return;
-                                    }
-                                }
-                                else
-                                {
-                                    return;
-                                }
-                            }
-                            catch (Exception)
-                            {
-                                return;
-                            }
-
-                            foreach (GattCharacteristic c in characteristics)
-                            {
-                                if (c.Uuid == uid)
-                                {
-                                    try
-                                    {
-                                        string sss = await ReadBufferToSelectedCharacteristicAsync(c);
-                                        tbLogin.Text = sss;
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        throw new Exception("Ошибка передачи данных" + ex.Message);
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
+                writeBuffer = CryptographicBuffer.CreateFromByteArray(ByteBufferList[i]);
+                await WriteBufferToSelectedCharacteristicAsync(writeBuffer, selectedCharacteristic);
             }
         }
-
         private async void butDownload_Click(object sender, RoutedEventArgs e)
         {
             string content = String.Empty;
-            CMD command = 0;
-            SelectCommand(sender, ref command, ref content);
-            if (command == 0) return;
+            CurrentCommand = 0;
+            SelectCommand(sender, ref CurrentCommand, ref content);
+            
+            if (CurrentCommand == 0) return;
             try
             {
-                List<byte[]> ByteBufferList;
-                IBuffer writeBuffer;
-                ByteBufferList = CreateByteBuffers(command, content);
-                for (int i = 0; i < ByteBufferList.Count; i++)
-                {
-                    writeBuffer = CryptographicBuffer.CreateFromByteArray(ByteBufferList[i]);
-                    await WriteBufferToSelectedCharacteristicAsync(writeBuffer, selectedCharacteristic);
-                }
+                SendBuffer(CurrentCommand, content);
             }
             catch (Exception ex)
             {
@@ -394,12 +329,22 @@ namespace BLE
                 Settings.URL = content;
                 Settings.Save();
             }
+            if (sender == butRead_URL)
+            {
+                command = CMD.GetURL;
+                content = String.Empty;
+            }
             if (sender == butDownload_Port)
             {
                 content = tbPort.Text;
                 command = CMD.SetPort;
                 Settings.Port = content;
                 Settings.Save();
+            }
+            if (sender == butRead_Port)
+            {
+                command = CMD.GetPort;
+                content = String.Empty;
             }
             if (sender == butDownload_Login)
             {
@@ -427,12 +372,22 @@ namespace BLE
                 Settings.Point = content;
                 Settings.Save();
             }
+            if (sender == butRead_Point)
+            {
+                command = CMD.GetPoint;
+                content = String.Empty;
+            }
             if (sender == butDownload_ID)
             {
                 content = tbID.Text;
                 command = CMD.SetID;
                 Settings.ID = content;
                 Settings.Save();
+            }
+            if (sender == butRead_ID)
+            {
+                command = CMD.GetID;
+                content = String.Empty;
             }
         }
 
@@ -485,15 +440,6 @@ namespace BLE
             bluetoothLEDevice = null;
         }
 
-        private async Task<string> ReadBufferToSelectedCharacteristicAsync(GattCharacteristic c)
-        {
-            var result = await c.ReadValueAsync(BluetoothCacheMode.Uncached);
-            IBuffer buff = result.Value;
-            string s = CryptographicBuffer.ConvertBinaryToString(BinaryStringEncoding.Utf8, buff);
-            if (result.Status == GattCommunicationStatus.Success) return s;
-            return null;
-        }
-
         private async Task<bool> WriteBufferToSelectedCharacteristicAsync(IBuffer buffer, GattCharacteristic c)
         {
             // BT_Code: Writes the value from the buffer to the characteristic.
@@ -510,32 +456,11 @@ namespace BLE
             butDownload_Password.IsEnabled = enable;
             butDownload_Point.IsEnabled = enable;
             butDownload_ID.IsEnabled = enable;
+            butRead_URL.IsEnabled = enable;
+            butRead_Port.IsEnabled = enable;
             butRead_Login.IsEnabled = enable;
-        }
-
-        private async void butRead_Click(object sender, RoutedEventArgs e)
-        {
-                string url = tbURL.Text;
-                string login = tbLogin.Text;
-                string password = tbPassword.Text;
-                string content = String.Empty;
-                CMD command = 0;
-                if (sender == butRead_Login)
-                {
-                    content = tbURL.Text;
-                    command = CMD.SetURL;
-                    Settings.URL = content;
-                    Settings.Save();
-                }
-                if (content == String.Empty) return;
-                try
-                {
-                        string res = await ReadBufferToSelectedCharacteristicAsync(selectedCharacteristic);
-                }
-                catch (Exception ex)
-                {
-                    throw new Exception("Ошибка передачи данных" + ex.Message);
-                }
+            butRead_Point.IsEnabled = enable;
+            butRead_ID.IsEnabled = enable;
         }
 
         private async void butConnect_Click(object sender, RoutedEventArgs e)
@@ -580,7 +505,7 @@ namespace BLE
                             {
                                 // BT_Code: Get all the child characteristics of a service. Use the cache mode to specify uncached characterstics only 
                                 // and the new Async functions to get the characteristics of unpaired devices as well. 
-                                var result3 = await service.GetCharacteristicsAsync(BluetoothCacheMode.Uncached);
+                                var result3 = await service.GetCharacteristicsAsync(BluetoothCacheMode.Cached);
                                 if (result3.Status == GattCommunicationStatus.Success)
                                 {
                                     characteristics = result3.Characteristics;
@@ -605,6 +530,9 @@ namespace BLE
                             if (c.Uuid == uid)
                             {
                                 selectedCharacteristic = c;
+                                await Subscribe();
+                                selectedCharacteristic.ValueChanged += SelectedCharacteristic_ValueChanged;
+
                                 tbDeviceInfo.Text = $"Подключено: {bluetoothLEDevice.BluetoothAddress}, {DisplayHelpers.GetCharacteristicName(c)}";
                                 EnableButtons(true);
                                 break;
@@ -612,6 +540,85 @@ namespace BLE
                         }
                     }
                 }
+            }
+        }
+
+        private async Task<bool> Subscribe()
+        {
+            GattCommunicationStatus status = GattCommunicationStatus.Unreachable;
+            var cccdValue = GattClientCharacteristicConfigurationDescriptorValue.None;
+            if (selectedCharacteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Indicate))
+            {
+                cccdValue = GattClientCharacteristicConfigurationDescriptorValue.Indicate;
+            }
+
+            else if (selectedCharacteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Notify))
+            {
+                cccdValue = GattClientCharacteristicConfigurationDescriptorValue.Notify;
+            }
+
+            try
+            {
+                // BT_Code: Must write the CCCD in order for server to send indications.
+                // We receive them in the ValueChanged event handler.
+                status = await selectedCharacteristic.WriteClientCharacteristicConfigurationDescriptorAsync(cccdValue);
+
+                if (status == GattCommunicationStatus.Success)
+                {
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                return false;
+            }
+
+        }
+
+
+        private async void SelectedCharacteristic_ValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
+        {
+            var value = args.CharacteristicValue;
+            byte[] buff = new byte[value.Capacity];
+            for (uint i = 0; i < value.Capacity; i++)
+            {
+                buff[i] = value.GetByte(i);
+            }
+            var carr = buff.Select(x => (Char)(x)).ToArray();
+            string s = new string(carr);
+
+            await Dispatcher.RunAsync(
+            Windows.UI.Core.CoreDispatcherPriority.Normal,
+            () => {
+                CurrentTextBox().Text = s;
+            });            
+        }
+
+        private TextBox CurrentTextBox()
+        {
+            switch (CurrentCommand)
+            {
+                case CMD.GetURL: return tbURL;
+                case CMD.GetPort: return tbPort;
+                case CMD.GetLogin: return tbLogin;
+                case CMD.GetPoint: return tbPoint;
+                case CMD.GetID: return tbID;
+                default: return null;
+            }
+        }
+
+        private void butDownloadAll_Click(object sender, RoutedEventArgs e)
+        {
+            CMD[] cmdArr = { CMD.SetURL, CMD.SetPort, CMD.SetLogin, CMD.SetPassword, CMD.SetPoint, CMD.SetID };
+            TextBox[] tbArr = { tbURL, tbPort, tbLogin, tbPassword, tbPoint, tbID };
+            for (int i = 0; i < cmdArr.Length; i++)
+            {
+                SendBuffer(cmdArr[i], tbArr[i].Text);
+                Thread.Sleep(2000);
             }
         }
     }
