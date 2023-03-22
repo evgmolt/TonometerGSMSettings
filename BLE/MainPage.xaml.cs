@@ -58,6 +58,11 @@ namespace BLE
             tbPassword.Text = Settings.Password;
         }
 
+        protected override void OnNavigatedTo(NavigationEventArgs e)
+        {
+            button_Click(null, null);
+        }
+
         private void button_Click(object sender, RoutedEventArgs e)
         {
             if (deviceWatcher == null)
@@ -296,28 +301,78 @@ namespace BLE
         {
             List<byte[]> ByteBufferList;
             IBuffer writeBuffer;
+            CurrentCommand = command;
             ByteBufferList = CreateByteBuffers(CurrentCommand, content);
             for (int i = 0; i < ByteBufferList.Count; i++)
             {
                 writeBuffer = CryptographicBuffer.CreateFromByteArray(ByteBufferList[i]);
+//                DebugReceiver(ByteBufferList[i], (byte)command);
                 await WriteBufferToSelectedCharacteristicAsync(writeBuffer, selectedCharacteristic);
             }
         }
-        private async void butDownload_Click(object sender, RoutedEventArgs e)
+        private void butDownload_Click(object sender, RoutedEventArgs e)
         {
             string content = String.Empty;
             CurrentCommand = 0;
             SelectCommand(sender, ref CurrentCommand, ref content);
-            
+
             if (CurrentCommand == 0) return;
             try
             {
                 SendBuffer(CurrentCommand, content);
+
+                Thread.Sleep(100);
             }
             catch (Exception ex)
             {
                 throw new Exception("Ошибка передачи данных" + ex.Message);
             }
+        }
+
+        byte[] resultBuffer = new byte[200];
+        int indexUrl = 0;
+        int BLE_PACKET_SIZE = 20;
+        private int DebugReceiver(byte[] input, byte cmd)
+        {
+            bool flag = false;
+            for (int i = 0; i < BLE_PACKET_SIZE; i++)
+            {
+                if (input[0] == '0' && input[1] == '2')
+                {
+                    flag = true;
+                }
+                if (flag)
+                {
+                    if (input[i + 2] == cmd)
+                    {
+                        int index;
+                        byte sum = 0;
+                        for (index = 3; index < BLE_PACKET_SIZE - 1; index++)
+                        {
+                            resultBuffer[indexUrl] = input[i + index];
+                            sum += input[i + index];
+                            indexUrl++;
+                            if (input[i + index] == 0)
+                            {
+                                var charBuf = resultBuffer.Select(x => (char)x).ToArray();
+                                string sss = new string(charBuf);
+                                tbDeviceInfo.Text = sss;
+                                if (input[i + index + 1] == sum)
+                                {
+                                    return 0;
+                                }
+                                return 1;
+                            }
+                        }
+                        if (input[input.Length - 1] == sum)
+                        {
+                            return 0;
+                        }
+                        return 1;
+                    }
+                }
+            }
+            return 0;
         }
 
         private void SelectCommand(object sender, ref CMD command, ref string content)
@@ -416,22 +471,38 @@ namespace BLE
                     index = 0;
                     ByteBuffer = new byte[sendBufSize];
                     result.Add(ByteBuffer);
+                    ByteBuffer[index] = (byte)CMD.Marker1;
+                    index++;
+                    ByteBuffer[index] = (byte)CMD.Marker2;
+                    index++;
+                    ByteBuffer[index] = (byte)command;
+                    index++;
                 }
             }
-            ByteBuffer[ByteBuffer.Length - 2] = 0; //признак конца строки
+            ByteBuffer[index] = 0; //признак конца строки
             AddCheckSum(ByteBuffer);
             return result;
         }
 
-        //Добавляет контрольную сумму в последний элемент массива
+        //Добавляет контрольную сумму в последний элемент массива или если встречается 0 - в следующий за ним элемент
         private static void AddCheckSum(byte[] dataArray)
         {
+            int indexOfZero = dataArray.Length;
+            for (int i = 0; i < dataArray.Length; i++)
+            {
+                if (dataArray[i] == 0)
+                {
+                    indexOfZero = i;
+                    break;
+                }
+            }
             byte sum = 0;
-            for (int i = 3; i < dataArray.Length - 1; i++)
+            int lastIndex = Math.Min(dataArray.Length - 1, indexOfZero + 1);
+            for (int i = 3; i < lastIndex; i++)
             {
                 sum += dataArray[i];
             }
-            dataArray[dataArray.Length - 1] = sum;
+            dataArray[lastIndex] = sum;
         }
 
         private void ClearBluetoothLEDevice()
@@ -525,18 +596,14 @@ namespace BLE
                             return;
                         }
 
-                        foreach (GattCharacteristic c in characteristics)
+                        selectedCharacteristic = characteristics.FirstOrDefault(x => x.Uuid == uid);
+                        if (selectedCharacteristic != null)
                         {
-                            if (c.Uuid == uid)
-                            {
-                                selectedCharacteristic = c;
-                                await Subscribe();
-                                selectedCharacteristic.ValueChanged += SelectedCharacteristic_ValueChanged;
+                            await Subscribe();
+                            selectedCharacteristic.ValueChanged += SelectedCharacteristic_ValueChanged;
 
-                                tbDeviceInfo.Text = $"Подключено: {bluetoothLEDevice.BluetoothAddress}, {DisplayHelpers.GetCharacteristicName(c)}";
-                                EnableButtons(true);
-                                break;
-                            }
+                            tbDeviceInfo.Text = $"Подключено: {bluetoothLEDevice.BluetoothAddress}, {DisplayHelpers.GetCharacteristicName(selectedCharacteristic)}";
+                            EnableButtons(true);
                         }
                     }
                 }
@@ -613,13 +680,12 @@ namespace BLE
 
         private void butDownloadAll_Click(object sender, RoutedEventArgs e)
         {
-            CMD[] cmdArr = { CMD.SetURL, CMD.SetPort, CMD.SetLogin, CMD.SetPassword, CMD.SetPoint, CMD.SetID };
-            TextBox[] tbArr = { tbURL, tbPort, tbLogin, tbPassword, tbPoint, tbID };
-            for (int i = 0; i < cmdArr.Length; i++)
-            {
-                SendBuffer(cmdArr[i], tbArr[i].Text);
-                Thread.Sleep(2000);
-            }
+            CurrentCommand = CMD.SetURL;
+            SendBuffer(CurrentCommand, tbURL.Text);
+            CurrentCommand = CMD.SetPort;
+            SendBuffer(CurrentCommand, tbPort.Text);
+            CurrentCommand = CMD.SetLogin;
+            SendBuffer(CurrentCommand, tbLogin.Text);
         }
     }
 }
