@@ -43,7 +43,8 @@ namespace BLE
         private GSMSettings Settings;
         private GattCharacteristic selectedCharacteristic;
         private CMD CurrentCommand;
-
+        private DispatcherTimer timer;
+        int SendStep = 0;
         public MainPage()
         {
             this.InitializeComponent();
@@ -56,6 +57,52 @@ namespace BLE
             tbPort.Text = Settings.Port;
             tbLogin.Text = Settings.Login;
             tbPassword.Text = Settings.Password;
+            tbPoint.Text = Settings.Point;
+            tbID.Text = Settings.ID;
+
+            timer = new DispatcherTimer() { Interval = new TimeSpan(0, 0, 0, 0, 800) }; 
+            timer.Tick += Timer_Tick;
+        }
+
+        private void Timer_Tick(object sender, object e)
+        {
+            switch (SendStep)
+            {
+                case 1:
+                    CurrentCommand = CMD.SetURL;
+                    SendBuffer(CurrentCommand, tbURL.Text);
+                    SendStep++;
+                    break;
+                case 2:
+                    CurrentCommand = CMD.SetPort;
+                    SendBuffer(CurrentCommand, tbPort.Text);
+                    SendStep++;
+                    break;
+                case 3:
+                    CurrentCommand = CMD.SetLogin;
+                    SendBuffer(CurrentCommand, tbLogin.Text);
+                    SendStep++;
+                    break;
+                case 4:
+                    CurrentCommand = CMD.SetPassword;
+                    SendBuffer(CurrentCommand, tbPassword.Text);
+                    SendStep++;
+                    break;
+                case 5:
+                    CurrentCommand = CMD.SetPoint;
+                    SendBuffer(CurrentCommand, tbPoint.Text);
+                    SendStep++;
+                    break;
+                case 6:
+                    CurrentCommand = CMD.SetID;
+                    SendBuffer(CurrentCommand, tbID.Text);
+                    SendStep++;
+                    break;
+                default:
+                    SendStep = 0;
+                    timer.Stop();
+                    break;
+            }
         }
 
         protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -306,11 +353,11 @@ namespace BLE
             for (int i = 0; i < ByteBufferList.Count; i++)
             {
                 writeBuffer = CryptographicBuffer.CreateFromByteArray(ByteBufferList[i]);
-//                DebugReceiver(ByteBufferList[i], (byte)command);
+//                DebugReceiver(ByteBufferList[1], (byte)command);
                 await WriteBufferToSelectedCharacteristicAsync(writeBuffer, selectedCharacteristic);
             }
         }
-        private void butDownload_Click(object sender, RoutedEventArgs e)
+        private void SendCommand(object sender, RoutedEventArgs e)
         {
             string content = String.Empty;
             CurrentCommand = 0;
@@ -320,8 +367,6 @@ namespace BLE
             try
             {
                 SendBuffer(CurrentCommand, content);
-
-                Thread.Sleep(100);
             }
             catch (Exception ex)
             {
@@ -332,8 +377,13 @@ namespace BLE
         byte[] resultBuffer = new byte[200];
         int indexUrl = 0;
         int BLE_PACKET_SIZE = 20;
+        int lastPacketNum = 0;
+        int alreadyPackets = 0;
         private int DebugReceiver(byte[] input, byte cmd)
         {
+            int indexOfStartData = 4;
+            int dataSize = 15;
+
             bool flag = false;
             for (int i = 0; i < BLE_PACKET_SIZE; i++)
             {
@@ -345,23 +395,35 @@ namespace BLE
                 {
                     if (input[i + 2] == cmd)
                     {
+                        alreadyPackets++;
+                        int numOfPacket = input[i + 3];
+                        indexUrl = numOfPacket * dataSize;
                         int index;
                         byte sum = 0;
-                        for (index = 3; index < BLE_PACKET_SIZE - 1; index++)
+                        for (index = indexOfStartData; index < BLE_PACKET_SIZE - 1; index++)
                         {
                             resultBuffer[indexUrl] = input[i + index];
                             sum += input[i + index];
                             indexUrl++;
                             if (input[i + index] == 0)
                             {
-                                var charBuf = resultBuffer.Select(x => (char)x).ToArray();
-                                string sss = new string(charBuf);
-                                tbDeviceInfo.Text = sss;
+                                lastPacketNum = numOfPacket;
                                 if (input[i + index + 1] == sum)
                                 {
                                     return 0;
                                 }
                                 return 1;
+                            }
+                        }
+                        if (lastPacketNum > 0)
+                        {
+                            if (alreadyPackets == lastPacketNum + 1)
+                            {
+                                lastPacketNum = 0;
+                                alreadyPackets = 0;
+                                var charBuf = resultBuffer.Select(x => (char)x).ToArray();
+                                string sss = new string(charBuf);
+                                tbDeviceInfo.Text = sss;
                             }
                         }
                         if (input[input.Length - 1] == sum)
@@ -375,6 +437,7 @@ namespace BLE
             return 0;
         }
 
+        //В зависимости от sender выбирается команда и устанавливается content
         private void SelectCommand(object sender, ref CMD command, ref string content)
         {
             if (sender == butDownload_URL)
@@ -446,12 +509,15 @@ namespace BLE
             }
         }
 
+        //Создает список 20-байтовых буферов для отправки. В буфере первые 2 байта - маркеры, затем код команды, затем строка, 0 и 
+        //контрольная сумма.
         private List<byte[]> CreateByteBuffers(CMD command, string content)
         {
             const int sendBufSize = 20;
             byte sizeOfString = (byte)content.Length;
-            byte sizeOfHeader = 3;
-            byte[] ByteBuffer = new byte[Math.Min(sizeOfString + sizeOfHeader + 2, sendBufSize)];
+            byte sizeOfHeader = 4; //Два байта - маркеры, код команды и номер пакета
+            byte sizeOfTail = 2; //Хвост - 0 - признак конца строки и контрольная сумма
+            byte[] ByteBuffer = new byte[Math.Min(sizeOfString + sizeOfHeader + sizeOfTail, sendBufSize)];
             List<byte[]> result = new List<byte[]>();
             result.Add(ByteBuffer);
             byte index = 0;
@@ -460,6 +526,8 @@ namespace BLE
             ByteBuffer[index] = (byte)CMD.Marker2;
             index++;
             ByteBuffer[index] = (byte)command;
+            index++;
+            ByteBuffer[index] = 0;
             index++;
             for (int i = 0; i < content.Length; i++)
             {
@@ -477,6 +545,8 @@ namespace BLE
                     index++;
                     ByteBuffer[index] = (byte)command;
                     index++;
+                    ByteBuffer[index] = (byte)(result.Count - 1);
+                    index++;
                 }
             }
             ByteBuffer[index] = 0; //признак конца строки
@@ -487,8 +557,9 @@ namespace BLE
         //Добавляет контрольную сумму в последний элемент массива или если встречается 0 - в следующий за ним элемент
         private static void AddCheckSum(byte[] dataArray)
         {
+            int indexOfStartData = 4;
             int indexOfZero = dataArray.Length;
-            for (int i = 0; i < dataArray.Length; i++)
+            for (int i = indexOfStartData; i < dataArray.Length; i++)
             {
                 if (dataArray[i] == 0)
                 {
@@ -514,7 +585,7 @@ namespace BLE
         private async Task<bool> WriteBufferToSelectedCharacteristicAsync(IBuffer buffer, GattCharacteristic c)
         {
             // BT_Code: Writes the value from the buffer to the characteristic.
-            var result = await c.WriteValueWithResultAsync(buffer);
+            var result = await c.WriteValueWithResultAsync(buffer); 
             if (result.Status == GattCommunicationStatus.Success) return true;
             return false;
         }
@@ -532,6 +603,7 @@ namespace BLE
             butRead_Login.IsEnabled = enable;
             butRead_Point.IsEnabled = enable;
             butRead_ID.IsEnabled = enable;
+            butDownloadAll.IsEnabled = enable;
         }
 
         private async void butConnect_Click(object sender, RoutedEventArgs e)
@@ -680,12 +752,13 @@ namespace BLE
 
         private void butDownloadAll_Click(object sender, RoutedEventArgs e)
         {
-            CurrentCommand = CMD.SetURL;
-            SendBuffer(CurrentCommand, tbURL.Text);
-            CurrentCommand = CMD.SetPort;
-            SendBuffer(CurrentCommand, tbPort.Text);
-            CurrentCommand = CMD.SetLogin;
-            SendBuffer(CurrentCommand, tbLogin.Text);
+            timer.Start();
+            SendStep = 1;
+        }
+
+        private void listView_Tapped(object sender, TappedRoutedEventArgs e)
+        {
+            butConnect.IsEnabled = true;
         }
     }
 }
