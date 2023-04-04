@@ -4,7 +4,8 @@
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:mp="http://schemas.microsoft.com/appx/2014/phone/manifest"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
-  IgnorableNamespaces="uap mp">
+  xmlns:iot="http://schemas.microsoft.com/appx/manifest/iot/windows10"
+  IgnorableNamespaces="uap mp iot">
 
   <Identity
     Name="968f446f-d19d-4365-a013-4254358f78eb"
@@ -45,6 +46,12 @@
 
   <Capabilities>
     <Capability Name="internetClient" />
+    <iot:Capability Name="lowLevelDevices"/>
+    <uap:Capability Name="videosLibrary"/>
+    <uap:Capability Name="picturesLibrary"/>
+    <uap:Capability Name="musicLibrary"/>
     <DeviceCapability Name="bluetooth"/>
+    <DeviceCapability Name="proximity"/>
+    <DeviceCapability Name="lowLevel"/>
   </Capabilities>
 </Package>

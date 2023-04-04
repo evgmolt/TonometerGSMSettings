@@ -59,8 +59,9 @@ namespace BLE
             tbPassword.Text = Settings.Password;
             tbPoint.Text = Settings.Point;
             tbID.Text = Settings.ID;
+            tbWrite.Visibility = Visibility.Collapsed;
 
-            timer = new DispatcherTimer() { Interval = new TimeSpan(0, 0, 0, 0, 800) }; 
+            timer = new DispatcherTimer() { Interval = new TimeSpan(0, 0, 0, 0, 300) }; 
             timer.Tick += Timer_Tick;
         }
 
@@ -71,35 +72,42 @@ namespace BLE
                 case 1:
                     CurrentCommand = CMD.SetURL;
                     SendBuffer(CurrentCommand, tbURL.Text);
+                    tbWrite.Text = "Запись URL...";
                     SendStep++;
                     break;
                 case 2:
                     CurrentCommand = CMD.SetPort;
                     SendBuffer(CurrentCommand, tbPort.Text);
+                    tbWrite.Text = "Запись URL...";
                     SendStep++;
                     break;
                 case 3:
                     CurrentCommand = CMD.SetLogin;
                     SendBuffer(CurrentCommand, tbLogin.Text);
+                    tbWrite.Text = "Запись логина...";
                     SendStep++;
                     break;
                 case 4:
                     CurrentCommand = CMD.SetPassword;
                     SendBuffer(CurrentCommand, tbPassword.Text);
+                    tbWrite.Text = "Запись пароля...";
                     SendStep++;
                     break;
                 case 5:
                     CurrentCommand = CMD.SetPoint;
                     SendBuffer(CurrentCommand, tbPoint.Text);
+                    tbWrite.Text = "Запись точки доступа...";
                     SendStep++;
                     break;
                 case 6:
                     CurrentCommand = CMD.SetID;
                     SendBuffer(CurrentCommand, tbID.Text);
+                    tbWrite.Text = "Запись ID...";
                     SendStep++;
                     break;
                 default:
                     SendStep = 0;
+                    tbWrite.Text = "Запись завершена";
                     timer.Stop();
                     break;
             }
@@ -344,17 +352,34 @@ namespace BLE
             });
         }
 
+        private async void SaveBuf(List<byte[]> buflist)
+        {
+            List<string> list = new List<string>();
+            for (int i = 0; i < buflist.Count; i++)
+            {
+                var oneArray = buflist[i].Select(x => x.ToString("X2")).ToArray();
+                var oneString = string.Join(" ", oneArray);
+                list.Add(oneString);
+            }
+            Windows.Storage.StorageFolder storageFolder = Windows.Storage.ApplicationData.Current.LocalFolder;
+            Windows.Storage.StorageFile file = await storageFolder.CreateFileAsync("buffer.txt", Windows.Storage.CreationCollisionOption.OpenIfExists);
+
+            // Append a list of strings, one per line, to the file
+//            await Windows.Storage.FileIO.AppendLinesAsync(file, list); // each entry in the list is written to the file on its own line.
+        }
         private async void SendBuffer(CMD command, string content)
         {
             List<byte[]> ByteBufferList;
             IBuffer writeBuffer;
             CurrentCommand = command;
             ByteBufferList = CreateByteBuffers(CurrentCommand, content);
+            SaveBuf(ByteBufferList);
             for (int i = 0; i < ByteBufferList.Count; i++)
             {
                 writeBuffer = CryptographicBuffer.CreateFromByteArray(ByteBufferList[i]);
-//                DebugReceiver(ByteBufferList[1], (byte)command);
+//                DebugReceiver(ByteBufferList[i], (byte)command);
                 await WriteBufferToSelectedCharacteristicAsync(writeBuffer, selectedCharacteristic);
+                Thread.Sleep(100);
             }
         }
         private void SendCommand(object sender, RoutedEventArgs e)
@@ -410,6 +435,11 @@ namespace BLE
                                 lastPacketNum = numOfPacket;
                                 if (input[i + index + 1] == sum)
                                 {
+                                    lastPacketNum = 0;
+                                    alreadyPackets = 0;
+                                    var charBuf = resultBuffer.Select(x => (char)x).ToArray();
+                                    string sss = new string(charBuf);
+                                    tbDeviceInfo.Text = sss;
                                     return 0;
                                 }
                                 return 1;
@@ -569,7 +599,7 @@ namespace BLE
             }
             byte sum = 0;
             int lastIndex = Math.Min(dataArray.Length - 1, indexOfZero + 1);
-            for (int i = 3; i < lastIndex; i++)
+            for (int i = 0; i < lastIndex; i++)
             {
                 sum += dataArray[i];
             }
@@ -673,7 +703,6 @@ namespace BLE
                         {
                             await Subscribe();
                             selectedCharacteristic.ValueChanged += SelectedCharacteristic_ValueChanged;
-
                             tbDeviceInfo.Text = $"Подключено: {bluetoothLEDevice.BluetoothAddress}, {DisplayHelpers.GetCharacteristicName(selectedCharacteristic)}";
                             EnableButtons(true);
                         }
@@ -733,7 +762,8 @@ namespace BLE
             await Dispatcher.RunAsync(
             Windows.UI.Core.CoreDispatcherPriority.Normal,
             () => {
-                CurrentTextBox().Text = s;
+                TextBox tb = CurrentTextBox();
+                if (!(tb is null)) tb.Text = s;
             });            
         }
 
@@ -754,6 +784,8 @@ namespace BLE
         {
             timer.Start();
             SendStep = 1;
+            tbWrite.Text = "Идет запись...";
+            tbWrite.Visibility = Visibility.Visible;
         }
 
         private void listView_Tapped(object sender, TappedRoutedEventArgs e)
