@@ -59,8 +59,11 @@
         <Button x:Name="butRead_Port" Content="Считать" Margin="429,141,0,0" Grid.Row="1" VerticalAlignment="Top" Width="83" Height="32" IsEnabled="False" Click="SendCommand"/>
         <Button x:Name="butConnect" Grid.Column="1" Content="Подключить" Margin="31,308,0,0" Grid.Row="1" VerticalAlignment="Top" Width="145" Click="butConnect_Click" IsEnabled="False" Height="32"/>
         <TextBlock x:Name="tbDeviceInfo" Grid.Column="1" HorizontalAlignment="Left" Margin="31,376,0,0" Grid.Row="1" TextWrapping="Wrap" Text="Не подключено " VerticalAlignment="Top" Height="19" Width="494"/>
-        <Button x:Name="butDownloadAll" Content="Записать все" Margin="185,600,0,0" Grid.Row="1" VerticalAlignment="Top" Width="115" Click="butDownloadAll_Click" IsEnabled="False" Height="32"/>
-        <TextBlock x:Name="tbWrite" HorizontalAlignment="Left" Margin="185,663,0,0" Grid.Row="1" TextWrapping="Wrap" Text="TextBlock" VerticalAlignment="Top" Visibility="Visible"/>
+        <Button x:Name="butDownloadAll" Content="Записать все" Margin="185,712,0,0" Grid.Row="1" VerticalAlignment="Top" Width="115" Click="butDownloadAll_Click" IsEnabled="False" Height="32"/>
+        <TextBlock x:Name="tbWrite" HorizontalAlignment="Left" Margin="185,775,0,0" Grid.Row="1" TextWrapping="Wrap" Text="TextBlock" VerticalAlignment="Top" Visibility="Visible"/>
+        <TextBlock x:Name="textBlock3" HorizontalAlignment="Left" Margin="67,581,0,0" Grid.Row="1" TextWrapping="Wrap" Text="Дата / время" VerticalAlignment="Top"/>
+        <TextBox x:Name="tbDateTime" HorizontalAlignment="Left" Margin="185,574,0,0" Grid.Row="1" TextWrapping="Wrap" Text="TextBox" VerticalAlignment="Top" Width="327" IsReadOnly="True"/>
+        <Button x:Name="but_Download_DateTime" Content="Записать" Margin="185,630,0,0" Grid.Row="1" VerticalAlignment="Top" Width="83" Click="SendCommand"/>
 
     </Grid>
 </Page>

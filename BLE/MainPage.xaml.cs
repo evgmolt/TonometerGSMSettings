@@ -44,6 +44,7 @@ namespace BLE
         private GattCharacteristic selectedCharacteristic;
         private CMD CurrentCommand;
         private DispatcherTimer timer;
+        private DispatcherTimer timerDateTime;
         int SendStep = 0;
         public MainPage()
         {
@@ -61,8 +62,24 @@ namespace BLE
             tbID.Text = Settings.ID;
             tbWrite.Visibility = Visibility.Collapsed;
 
+            timerDateTime = new DispatcherTimer() { Interval = new TimeSpan(0, 0, 0, 1, 0) };
+            timerDateTime.Tick += TimerDateTime_Tick;
+            timerDateTime.Start();
             timer = new DispatcherTimer() { Interval = new TimeSpan(0, 0, 0, 0, 300) }; 
             timer.Tick += Timer_Tick;
+        }
+
+        private void TimerDateTime_Tick(object sender, object e)
+        {
+            byte[] dtbuf = new byte[6];
+            DateTime dt = DateTime.Now;
+            dtbuf[0] = (byte)(DateTime.Now.Year - 2000);
+            dtbuf[1] = (byte)DateTime.Now.Month;
+            dtbuf[2] = (byte)DateTime.Now.Day;
+            dtbuf[3] = (byte)DateTime.Now.Hour;
+            dtbuf[4] = (byte)DateTime.Now.Minute;
+            dtbuf[5] = (byte)DateTime.Now.Second;
+            tbDateTime.Text = String.Format(@"{0:d2}:{1:d2}:{2:d2} {3:d2}.{4:d2}.{5}", dtbuf[3], dtbuf[4], dtbuf[5], dtbuf[2], dtbuf[1], dtbuf[0]);
         }
 
         private void Timer_Tick(object sender, object e)
@@ -78,7 +95,7 @@ namespace BLE
                 case 2:
                     CurrentCommand = CMD.SetPort;
                     SendBuffer(CurrentCommand, tbPort.Text);
-                    tbWrite.Text = "Запись URL...";
+                    tbWrite.Text = "Запись порта...";
                     SendStep++;
                     break;
                 case 3:
@@ -470,6 +487,20 @@ namespace BLE
         //В зависимости от sender выбирается команда и устанавливается content
         private void SelectCommand(object sender, ref CMD command, ref string content)
         {
+            if (sender == but_Download_DateTime)
+            {
+                byte[] dtbuf = new byte[6];
+                DateTime dt = DateTime.Now;
+                dtbuf[0] = (byte)(DateTime.Now.Year - 2000);
+                dtbuf[1] = (byte)DateTime.Now.Month;
+                dtbuf[2] = (byte)DateTime.Now.Day;
+                dtbuf[3] = (byte)DateTime.Now.Hour;
+                dtbuf[4] = (byte)DateTime.Now.Minute;
+                dtbuf[5] = (byte)DateTime.Now.Second;
+                var cbuf = dtbuf.Select(x => Convert.ToChar(x));
+                content = new string(cbuf.ToArray());
+                command = CMD.SetTime;
+            }
             if (sender == butDownload_URL)
             {
                 content = tbURL.Text;
@@ -547,7 +578,9 @@ namespace BLE
             byte sizeOfString = (byte)content.Length;
             byte sizeOfHeader = 4; //Два байта - маркеры, код команды и номер пакета
             byte sizeOfTail = 2; //Хвост - 0 - признак конца строки и контрольная сумма
-            byte[] ByteBuffer = new byte[Math.Min(sizeOfString + sizeOfHeader + sizeOfTail, sendBufSize)];
+            int bufSize = Math.Min(sizeOfString + sizeOfHeader + sizeOfTail, sendBufSize);
+//            if (content == String.Empty) bufSize = sendBufSizeForGet;
+            byte[] ByteBuffer = new byte[bufSize];
             List<byte[]> result = new List<byte[]>();
             result.Add(ByteBuffer);
             byte index = 0;
@@ -556,6 +589,11 @@ namespace BLE
             ByteBuffer[index] = (byte)CMD.Marker2;
             index++;
             ByteBuffer[index] = (byte)command;
+/*            if (content == String.Empty)
+            {
+                AddCheckSumForGetCommand(ByteBuffer);
+                return result;
+            }*/
             index++;
             ByteBuffer[index] = 0;
             index++;
@@ -582,6 +620,17 @@ namespace BLE
             ByteBuffer[index] = 0; //признак конца строки
             AddCheckSum(ByteBuffer);
             return result;
+        }
+
+        private static void AddCheckSumForGetCommand(byte[] dataArray)
+        {
+            int size = 3;
+            byte sum = 0;
+            for (int i = 0; i < size; i++)
+            {
+                sum += dataArray[i];
+            }
+            dataArray[size] = sum;
         }
 
         //Добавляет контрольную сумму в последний элемент массива или если встречается 0 - в следующий за ним элемент
